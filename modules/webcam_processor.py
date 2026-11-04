@@ -7,8 +7,16 @@ import threading
 from collections import Counter
 from streamlit_webrtc import VideoProcessorBase
 
+# Load the YOLO model once when the processor is created.
+from modules.detector import model
+
 
 class WebcamProcessor(VideoProcessorBase):
+
+    INFERENCE_INTERVAL = 2
+    MAX_FRAME_SIZE = 640
+    YOLO_IMAGE_SIZE = 480
+    CONFIDENCE = 0.35
 
     def __init__(self):
         self.lock = threading.Lock()
@@ -16,7 +24,12 @@ class WebcamProcessor(VideoProcessorBase):
         self.object_counts = Counter()
         self.total_detections = 0
         self.frame_count = 0
-        self.confidence_scores = []
+
+        # Memory-efficient confidence tracking
+        self.confidence_sum = 0.0
+        self.confidence_count = 0
+
+        self.last_annotated = None
 
         self.recording_requested = False
         self.video_writer = None
@@ -36,42 +49,84 @@ class WebcamProcessor(VideoProcessorBase):
 
     def recv(self, frame):
 
-        from modules.detector import model
-
         img = frame.to_ndarray(format="bgr24")
-
-        results = model.predict(
-            source=img,
-            conf=0.35,
-            imgsz=640,
-            verbose=False
-        )
-
-        result = results[0]
-        annotated = result.plot()
-
-        frame_objects = []
-
-        if result.boxes is not None:
-
-            for box in result.boxes:
-
-                class_id = int(box.cls[0].item())
-                score = float(box.conf[0].item())
-                object_name = result.names[class_id]
-
-                frame_objects.append((object_name, score))
+        original_height, original_width = img.shape[:2]
 
         with self.lock:
-
             self.frame_count += 1
-            self.total_detections += len(frame_objects)
+            current_frame = self.frame_count
 
-            for name, score in frame_objects:
-                self.object_counts[name] += 1
-                self.confidence_scores.append(score)
+        # Run YOLO on every second frame.
+        should_infer = (
+            self.last_annotated is None
+            or current_frame % self.INFERENCE_INTERVAL == 1
+        )
 
-            # RECORD ANNOTATED FRAMES
+        if should_infer:
+
+            # Resize large camera frames before inference.
+            scale = min(
+                1.0,
+                self.MAX_FRAME_SIZE / max(original_width, original_height)
+            )
+
+            if scale < 1.0:
+                new_width = int(original_width * scale)
+                new_height = int(original_height * scale)
+
+                inference_img = cv2.resize(
+                    img,
+                    (new_width, new_height),
+                    interpolation=cv2.INTER_AREA
+                )
+            else:
+                inference_img = img
+
+            results = model.predict(
+                source=inference_img,
+                conf=self.CONFIDENCE,
+                imgsz=self.YOLO_IMAGE_SIZE,
+                verbose=False
+            )
+
+            result = results[0]
+            annotated = result.plot()
+
+            # Restore the original camera dimensions.
+            if annotated.shape[:2] != (original_height, original_width):
+                annotated = cv2.resize(
+                    annotated,
+                    (original_width, original_height),
+                    interpolation=cv2.INTER_LINEAR
+                )
+
+            frame_objects = []
+
+            if result.boxes is not None:
+                for box in result.boxes:
+
+                    class_id = int(box.cls[0].item())
+                    score = float(box.conf[0].item())
+                    object_name = result.names[class_id]
+
+                    frame_objects.append((object_name, score))
+
+            self.last_annotated = annotated
+
+            with self.lock:
+                self.total_detections += len(frame_objects)
+
+                for name, score in frame_objects:
+                    self.object_counts[name] += 1
+                    self.confidence_sum += score
+                    self.confidence_count += 1
+
+        else:
+            # Reuse the latest annotated image.
+            annotated = self.last_annotated
+
+        # Handle video recording.
+        with self.lock:
 
             if self.recording_requested:
 
@@ -98,7 +153,9 @@ class WebcamProcessor(VideoProcessorBase):
                         self.video_writer.release()
                         self.video_writer = None
                         self.recording_requested = False
-                        self.recording_error = "Could not initialize video recording."
+                        self.recording_error = (
+                            "Could not initialize video recording."
+                        )
 
                 if self.video_writer is not None:
                     self.video_writer.write(annotated)
@@ -143,18 +200,15 @@ class WebcamProcessor(VideoProcessorBase):
 
         with self.lock:
 
-            counts = dict(self.object_counts)
-            total = self.total_detections
-
             average = (
-                sum(self.confidence_scores) / len(self.confidence_scores)
-                if self.confidence_scores else 0
+                self.confidence_sum / self.confidence_count
+                if self.confidence_count else 0
             )
 
             return {
                 "frames": self.frame_count,
-                "total_detections": total,
-                "object_counts": counts,
+                "total_detections": self.total_detections,
+                "object_counts": dict(self.object_counts),
                 "average_confidence": round(average, 4),
                 "recording": self.recording_requested,
                 "recording_error": self.recording_error
