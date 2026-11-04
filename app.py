@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -539,7 +538,6 @@ with video_tab:
         st.info("Upload a video and click Process Video.")
 
 
-
 # ==================================================
 # LIVE WEBCAM DETECTION
 # ==================================================
@@ -549,19 +547,26 @@ with webcam_tab:
     st.header("📹 Live Webcam Detection")
 
     st.write(
-        "Detect objects continuously using your computer's webcam."
+        "Detect objects continuously using your phone or computer camera."
     )
 
     st.info(
-        "Click START and allow camera access when your browser asks."
+        "Click START and allow camera access when your browser asks. "
+        "On mobile devices, the rear camera is preferred when available."
     )
+
+    # MOBILE REAR CAMERA SUPPORT
 
     webrtc_ctx = webrtc_streamer(
         key="visiondetect-webcam",
         mode=WebRtcMode.SENDRECV,
         video_processor_factory=WebcamProcessor,
         media_stream_constraints={
-            "video": True,
+            "video": {
+                "facingMode": {
+                    "ideal": "environment"
+                }
+            },
             "audio": False
         },
         async_processing=True
@@ -570,7 +575,7 @@ with webcam_tab:
     if webrtc_ctx.state.playing:
         st.success("Webcam detection is running.")
     else:
-        st.info("Click START to activate your webcam.")
+        st.info("Click START to activate your camera.")
 
     processor = webrtc_ctx.video_processor
 
@@ -600,7 +605,7 @@ with webcam_tab:
 
             if st.button(
                 "⏹️ Stop Recording",
-                disabled=not processor.get_statistics()["recording"],
+                disabled=not processor.get_statistics().get("recording", False),
                 key="stop_webcam_recording"
             ):
 
@@ -620,10 +625,10 @@ with webcam_tab:
 
         stats = processor.get_statistics()
 
-        if stats["recording"]:
+        if stats.get("recording", False):
             st.warning("Recording is in progress...")
 
-        if stats["recording_error"]:
+        if stats.get("recording_error"):
             st.error(stats["recording_error"])
 
         # DOWNLOAD RECORDED VIDEO
@@ -697,7 +702,6 @@ with webcam_tab:
             "Counts are cumulative detections across processed frames, "
             "not unique physical objects."
         )
-
 
 
 # ==================================================
