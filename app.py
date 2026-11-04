@@ -563,9 +563,9 @@ with webcam_tab:
         video_processor_factory=WebcamProcessor,
         media_stream_constraints={
             "video": {
-                "facingMode": {
-                    "ideal": "environment"
-                }
+                "facingMode": "environment",
+                "width": {"ideal": 640},
+                "height": {"ideal": 480}
             },
             "audio": False
         },
