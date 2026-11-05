@@ -1,13 +1,13 @@
 
-import streamlit as st
-import pandas as pd
-import matplotlib.pyplot as plt
-import time
-import tempfile
 import os
-
-from PIL import Image
+import tempfile
+import time
 from io import BytesIO
+
+import matplotlib.pyplot as plt
+import pandas as pd
+import streamlit as st
+from PIL import Image
 
 from modules.detector import detect_image, get_detection_summary
 from modules.video_processor import process_video
@@ -29,6 +29,49 @@ st.set_page_config(
 
 
 # ==================================================
+# WEBRTC CONFIGURATION
+# ==================================================
+
+def build_rtc_configuration():
+    """Use public STUN servers and optional TURN credentials."""
+
+    ice_servers = [
+        {"urls": ["stun:stun.l.google.com:19302"]},
+        {"urls": ["stun:stun.cloudflare.com:3478"]}
+    ]
+
+    try:
+        turn_urls = st.secrets.get("TURN_SERVER_URLS", "")
+        turn_username = st.secrets.get("TURN_USERNAME", "")
+        turn_credential = st.secrets.get("TURN_CREDENTIAL", "")
+
+        if isinstance(turn_urls, str):
+            turn_urls = [
+                url.strip()
+                for url in turn_urls.split(",")
+                if url.strip()
+            ]
+
+        if (
+            turn_urls
+            and turn_username
+            and turn_credential
+        ):
+            ice_servers.append({
+                "urls": turn_urls,
+                "username": turn_username,
+                "credential": turn_credential
+            })
+
+    except Exception:
+        # Continue with public STUN servers if TURN secrets
+        # have not been configured.
+        pass
+
+    return {"iceServers": ice_servers}
+
+
+# ==================================================
 # CUSTOM CSS
 # ==================================================
 
@@ -37,9 +80,11 @@ st.markdown("""
 .main {
     background-color: #0e1117;
 }
+
 .block-container {
     padding-top: 2rem;
 }
+
 h1 {
     color: #38bdf8;
 }
@@ -53,9 +98,7 @@ h1 {
 
 st.title("👁️ VisionDetect AI")
 
-st.subheader(
-    "Intelligent Object Detection & Analysis System"
-)
+st.subheader("Intelligent Object Detection & Analysis System")
 
 st.write(
     "Detect, analyze, and generate insights from "
@@ -84,7 +127,6 @@ st.sidebar.info(
 )
 
 st.sidebar.markdown("---")
-
 st.sidebar.write("**Detection Model:** YOLOv8 Nano")
 
 st.sidebar.write("**Supported Inputs:**")
@@ -93,12 +135,11 @@ st.sidebar.write("- Recorded Videos")
 st.sidebar.write("- Live Webcam")
 
 st.sidebar.markdown("---")
-
 st.sidebar.caption("VisionDetect AI | Computer Vision Project")
 
 
 # ==================================================
-# HELPER FUNCTION: DISPLAY ANALYTICS
+# HELPER: DISPLAY ANALYTICS
 # ==================================================
 
 def display_analytics(counts, chart_title):
@@ -117,13 +158,11 @@ def display_analytics(counts, chart_title):
         values = list(counts.values())
 
         ax.bar(objects, values)
-
         ax.set_title(chart_title)
         ax.set_ylabel("Detection Count")
         ax.tick_params(axis="x", rotation=30)
 
         fig.tight_layout()
-
         st.pyplot(fig)
         plt.close(fig)
 
@@ -171,11 +210,7 @@ with image_tab:
         image = Image.open(uploaded_image).convert("RGB")
 
         st.subheader("Original Image")
-
-        st.image(
-            image,
-            use_container_width=True
-        )
+        st.image(image, use_container_width=True)
 
         if st.button(
             "🚀 Detect Objects",
@@ -193,7 +228,6 @@ with image_tab:
                 )
 
                 processing_time = time.time() - start_time
-
                 summary = get_detection_summary(detections)
 
                 st.session_state["image_result"] = {
@@ -203,31 +237,22 @@ with image_tab:
                     "time": processing_time
                 }
 
-    # IMAGE RESULTS
-
     if "image_result" in st.session_state:
 
         result = st.session_state["image_result"]
-
         summary = result["summary"]
         detections = result["detections"]
 
         st.divider()
-
         st.header("📊 Image Analysis Results")
 
         col1, col2, col3 = st.columns(3)
 
-        col1.metric(
-            "Total Objects",
-            summary["total_objects"]
-        )
-
+        col1.metric("Total Objects", summary["total_objects"])
         col2.metric(
             "Object Categories",
             len(summary["object_counts"])
         )
-
         col3.metric(
             "Average Confidence",
             f'{summary["average_confidence"] * 100:.2f}%'
@@ -252,7 +277,6 @@ with image_tab:
         if detections:
 
             df = pd.DataFrame(detections)
-
             display_df = df.copy()
 
             display_df["confidence"] = (
@@ -273,10 +297,7 @@ with image_tab:
             )
 
         else:
-
             st.info("No objects detected.")
-
-        # ANNOTATED IMAGE DOWNLOAD
 
         image_buffer = BytesIO()
 
@@ -291,8 +312,6 @@ with image_tab:
             file_name="annotated_image.jpg",
             mime="image/jpeg"
         )
-
-        # IMAGE PDF REPORT
 
         pdf_report = generate_pdf_report(
             summary=summary,
@@ -313,7 +332,6 @@ with image_tab:
         )
 
     else:
-
         st.info("Upload an image and click Detect Objects.")
 
 
@@ -357,10 +375,7 @@ with video_tab:
                     suffix=".mp4"
                 ) as temp_input:
 
-                    temp_input.write(
-                        uploaded_video.getbuffer()
-                    )
-
+                    temp_input.write(uploaded_video.getbuffer())
                     input_path = temp_input.name
 
                 temp_output = tempfile.NamedTemporaryFile(
@@ -383,7 +398,6 @@ with video_tab:
                     )
 
                     with open(output_path, "rb") as file:
-
                         processed_video = file.read()
 
                     st.session_state["video_result"] = {
@@ -397,18 +411,17 @@ with video_tab:
 
             except Exception as error:
 
-                st.error(
-                    f"Video processing failed: {error}"
-                )
+                st.error(f"Video processing failed: {error}")
 
             finally:
 
                 for path in [input_path, output_path]:
 
                     if path and os.path.exists(path):
-                        os.remove(path)
-
-    # VIDEO RESULTS
+                        try:
+                            os.remove(path)
+                        except OSError:
+                            pass
 
     if "video_result" in st.session_state:
 
@@ -419,7 +432,6 @@ with video_tab:
         info = result["info"]
 
         st.divider()
-
         st.header("📊 Video Analysis Results")
 
         col1, col2, col3 = st.columns(3)
@@ -440,7 +452,6 @@ with video_tab:
         )
 
         st.subheader("Processed Video")
-
         st.video(result["video"])
 
         st.download_button(
@@ -454,20 +465,9 @@ with video_tab:
 
         col1, col2, col3 = st.columns(3)
 
-        col1.metric(
-            "Duration",
-            f'{info["duration"]} sec'
-        )
-
-        col2.metric(
-            "Original FPS",
-            info["fps"]
-        )
-
-        col3.metric(
-            "Processed Frames",
-            info["processed_frames"]
-        )
+        col1.metric("Duration", f'{info["duration"]} sec')
+        col2.metric("Original FPS", info["fps"])
+        col3.metric("Processed Frames", info["processed_frames"])
 
         col1, col2 = st.columns(2)
 
@@ -493,7 +493,6 @@ with video_tab:
         if detections:
 
             video_df = pd.DataFrame(detections)
-
             display_df = video_df.copy()
 
             display_df["confidence"] = (
@@ -514,10 +513,7 @@ with video_tab:
             )
 
         else:
-
             st.info("No objects detected in this video.")
-
-        # VIDEO PDF REPORT
 
         pdf_report = generate_pdf_report(
             summary=summary,
@@ -535,7 +531,6 @@ with video_tab:
         )
 
     else:
-
         st.info("Upload a video and click Process Video.")
 
 
@@ -548,32 +543,30 @@ with webcam_tab:
     st.header("📹 Live Webcam Detection")
 
     st.write(
-        "Detect objects continuously using your phone or computer camera."
+        "Detect objects continuously using your phone "
+        "or computer camera."
     )
 
     st.info(
-        "Click START and allow camera access when your browser asks. "
-        "On mobile devices, the rear camera is preferred when available."
+        "Click START and allow camera access. "
+        "Your browser will select the available camera automatically. "
+        "You can change the selected camera using your browser/device settings."
     )
 
-    # WEBRTC CONNECTION WITH GOOGLE STUN SERVER
+    # Automatic camera selection:
+    # No forced front or rear facingMode.
 
     webrtc_ctx = webrtc_streamer(
         key="visiondetect-webcam",
         mode=WebRtcMode.SENDRECV,
         video_processor_factory=WebcamProcessor,
 
-        rtc_configuration={
-            "iceServers": [
-                {
-                    "urls": ["stun:stun.l.google.com:19302"]
-                }
-            ]
-        },
+        rtc_configuration=build_rtc_configuration(),
 
         media_stream_constraints={
             "video": {
-                "facingMode": {"ideal": "environment"}
+                "width": {"ideal": 640},
+                "height": {"ideal": 480}
             },
             "audio": False
         },
@@ -582,11 +575,8 @@ with webcam_tab:
     )
 
     if webrtc_ctx.state.playing:
-
         st.success("Webcam detection is running.")
-
     else:
-
         st.info("Click START to activate your camera.")
 
     processor = webrtc_ctx.video_processor
@@ -594,9 +584,6 @@ with webcam_tab:
     if processor:
 
         st.divider()
-
-        # RECORDING CONTROLS
-
         st.subheader("🎥 Webcam Recording")
 
         col1, col2 = st.columns(2)
@@ -605,35 +592,38 @@ with webcam_tab:
 
             if st.button(
                 "🔴 Start Recording",
-                disabled=not webrtc_ctx.state.playing,
+                disabled=(
+                    not webrtc_ctx.state.playing
+                    or processor.get_statistics().get("recording", False)
+                ),
                 key="start_webcam_recording"
             ):
 
-                processor.start_recording()
-                st.session_state.pop("webcam_recording", None)
+                if processor.start_recording():
+                    st.session_state.pop("webcam_recording", None)
+
                 st.rerun()
 
         with col2:
 
             if st.button(
                 "⏹️ Stop Recording",
-                disabled=not processor.get_statistics().get("recording", False),
+                disabled=(
+                    not processor.get_statistics().get("recording", False)
+                ),
                 key="stop_webcam_recording"
             ):
 
                 video_bytes, error = processor.stop_recording()
 
                 if video_bytes:
-
                     st.session_state["webcam_recording"] = video_bytes
                     st.success("Recording completed!")
 
                 elif error:
-
                     st.error(error)
 
                 else:
-
                     st.warning("No recording frames were captured.")
 
                 st.rerun()
@@ -641,14 +631,10 @@ with webcam_tab:
         stats = processor.get_statistics()
 
         if stats.get("recording", False):
-
             st.warning("Recording is in progress...")
 
         if stats.get("recording_error"):
-
             st.error(stats["recording_error"])
-
-        # DOWNLOAD RECORDED VIDEO
 
         if "webcam_recording" in st.session_state:
 
@@ -663,22 +649,12 @@ with webcam_tab:
             )
 
         st.divider()
-
-        # LIVE STATISTICS
-
         st.subheader("Live Detection Statistics")
 
         col1, col2, col3 = st.columns(3)
 
-        col1.metric(
-            "Frames Processed",
-            stats["frames"]
-        )
-
-        col2.metric(
-            "Total Detections",
-            stats["total_detections"]
-        )
+        col1.metric("Frames Processed", stats["frames"])
+        col2.metric("Total Detections", stats["total_detections"])
 
         col3.metric(
             "Average Confidence",
@@ -689,7 +665,6 @@ with webcam_tab:
             "🔄 Refresh Webcam Statistics",
             key="refresh_webcam"
         ):
-
             st.rerun()
 
         st.subheader("Detected Objects")
@@ -700,8 +675,6 @@ with webcam_tab:
                 stats["object_counts"],
                 "Webcam Detection Distribution"
             )
-
-            # SAVE STATISTICS AS CSV
 
             webcam_df = pd.DataFrame(
                 list(stats["object_counts"].items()),
@@ -717,7 +690,6 @@ with webcam_tab:
             )
 
         else:
-
             st.info("No objects detected yet.")
 
         st.caption(
