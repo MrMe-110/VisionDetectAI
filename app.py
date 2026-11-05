@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -555,26 +556,37 @@ with webcam_tab:
         "On mobile devices, the rear camera is preferred when available."
     )
 
-    # MOBILE REAR CAMERA SUPPORT
+    # WEBRTC CONNECTION WITH GOOGLE STUN SERVER
 
     webrtc_ctx = webrtc_streamer(
         key="visiondetect-webcam",
         mode=WebRtcMode.SENDRECV,
         video_processor_factory=WebcamProcessor,
+
+        rtc_configuration={
+            "iceServers": [
+                {
+                    "urls": ["stun:stun.l.google.com:19302"]
+                }
+            ]
+        },
+
         media_stream_constraints={
             "video": {
-                "facingMode": "environment",
-                "width": {"ideal": 640},
-                "height": {"ideal": 480}
+                "facingMode": {"ideal": "environment"}
             },
             "audio": False
         },
+
         async_processing=True
     )
 
     if webrtc_ctx.state.playing:
+
         st.success("Webcam detection is running.")
+
     else:
+
         st.info("Click START to activate your camera.")
 
     processor = webrtc_ctx.video_processor
@@ -612,13 +624,16 @@ with webcam_tab:
                 video_bytes, error = processor.stop_recording()
 
                 if video_bytes:
+
                     st.session_state["webcam_recording"] = video_bytes
                     st.success("Recording completed!")
 
                 elif error:
+
                     st.error(error)
 
                 else:
+
                     st.warning("No recording frames were captured.")
 
                 st.rerun()
@@ -626,9 +641,11 @@ with webcam_tab:
         stats = processor.get_statistics()
 
         if stats.get("recording", False):
+
             st.warning("Recording is in progress...")
 
         if stats.get("recording_error"):
+
             st.error(stats["recording_error"])
 
         # DOWNLOAD RECORDED VIDEO
@@ -653,7 +670,10 @@ with webcam_tab:
 
         col1, col2, col3 = st.columns(3)
 
-        col1.metric("Frames Processed", stats["frames"])
+        col1.metric(
+            "Frames Processed",
+            stats["frames"]
+        )
 
         col2.metric(
             "Total Detections",
@@ -669,6 +689,7 @@ with webcam_tab:
             "🔄 Refresh Webcam Statistics",
             key="refresh_webcam"
         ):
+
             st.rerun()
 
         st.subheader("Detected Objects")
@@ -696,6 +717,7 @@ with webcam_tab:
             )
 
         else:
+
             st.info("No objects detected yet.")
 
         st.caption(
